@@ -1,0 +1,1978 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Python Пазл-Квест — Интерактивный тренажёр</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #0f172a;
+      color: #f8fafc;
+      overflow-x: hidden;
+    }
+    code, pre, .font-mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+    /* Анимация открытия кусочка пазла */
+    @keyframes pieceUnlock {
+      0% {
+        transform: scale(0.65) rotateY(90deg);
+        opacity: 0;
+        filter: brightness(2);
+      }
+      60% {
+        transform: scale(1.06) rotateY(0deg);
+        opacity: 1;
+        filter: brightness(1.3);
+      }
+      100% {
+        transform: scale(1) rotateY(0deg);
+        opacity: 1;
+        filter: brightness(1);
+      }
+    }
+    .piece-just-unlocked {
+      animation: pieceUnlock 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      z-index: 10;
+    }
+    /* Плавное мерцание активного кусочка */
+    @keyframes pulseBorder {
+      0%, 100% { box-shadow: inset 0 0 0 2px rgba(56, 189, 248, 0.9); }
+      50% { box-shadow: inset 0 0 0 2px rgba(251, 191, 36, 0.95); }
+    }
+    .piece-current {
+      animation: pulseBorder 1.8s infinite;
+    }
+    /* Скроллбар */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-[#0f172a] via-[#1e1b4b] to-[#0f172a] text-slate-100 flex flex-col">
+
+  <!-- ВЕРХНЯЯ ПАНЕЛЬ НАВИГАЦИИ -->
+  <header class="w-full border-b border-indigo-500/30 bg-slate-900/80 backdrop-blur-md sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3 cursor-pointer" onclick="app.goHome()">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-cyan-500/20 font-mono font-extrabold text-xl text-white">
+          Py
+        </div>
+        <div>
+          <h1 class="text-lg sm:text-xl font-extrabold tracking-tight bg-gradient-to-r from-cyan-300 via-white to-amber-300 bg-clip-text text-transparent">
+            Python Пазл-Квест
+          </h1>
+          <p class="text-xs text-slate-400 hidden sm:block">50 вопросов = 1 собранная картина</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 sm:gap-3">
+        <!-- Кнопка звука -->
+        <button id="soundToggleBtn" onclick="app.toggleSound()" title="Включить/выключить звук"
+          class="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition flex items-center gap-1.5 text-sm">
+          <span id="soundIcon">🔊</span>
+          <span class="hidden md:inline text-xs font-medium" id="soundLabel">Звук вкл</span>
+        </button>
+
+        <!-- Кнопка панели учителя -->
+        <button onclick="app.openTeacherLogin()"
+          class="px-3.5 py-2.5 rounded-xl bg-indigo-950/90 hover:bg-indigo-900 border border-indigo-500/40 text-indigo-200 hover:text-white transition flex items-center gap-2 text-xs sm:text-sm font-semibold shadow-md">
+          <span>🎓</span>
+          <span>Панель учителя</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ВСПЛЫВАЮЩЕЕ УВЕДОМЛЕНИЕ (TOAST) -->
+  <div id="toastBox" class="fixed bottom-5 right-5 z-50 pointer-events-none transition-all duration-300 opacity-0 translate-y-4">
+    <div id="toastInner" class="px-5 py-3.5 rounded-2xl shadow-2xl border font-semibold text-sm flex items-center gap-2.5 backdrop-blur-md"></div>
+  </div>
+
+  <!-- ОСНОВНОЙ КОНТЕЙНЕР ЭКРАНОВ -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 py-6 sm:py-8">
+
+    <!-- ==================== ЭКРАН 1: СТАРТ И ВЫБОР ПАЗЛА ==================== -->
+    <section id="screenStart" class="space-y-8">
+      <div class="bg-slate-900/75 border border-indigo-500/30 rounded-3xl p-6 sm:p-8 shadow-2xl">
+        <div class="max-w-3xl">
+          <span class="inline-block px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 mb-3">
+            Интерактивный квест по программированию
+          </span>
+          <h2 class="text-2xl sm:text-4xl font-extrabold text-white leading-tight mb-3">
+            Решай задачи по Python и открывай фрагменты картины!
+          </h2>
+          <p class="text-slate-300 text-sm sm:text-base leading-relaxed">
+            В каждом пазле ровно <strong class="text-amber-300">50 уникальных вопросов</strong>: тесты, ввод результата кода, соответствие и «Верно / Неверно». Если вопрос кажется сложным — нажми <strong class="text-cyan-300">«Пропустить»</strong>, и он вернётся позже!
+          </p>
+        </div>
+
+        <!-- Данные ученика -->
+        <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-950/60 p-5 rounded-2xl border border-slate-800">
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+              Фамилия и Имя ученика *
+            </label>
+            <input id="studentNameInput" type="text" placeholder="Например: Алихан Сериков"
+              class="w-full px-4 py-3.5 rounded-xl bg-slate-900 border border-slate-700 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20 outline-none text-white text-base transition" />
+          </div>
+          <div>
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
+              Класс / Группа *
+            </label>
+            <div class="flex gap-2">
+              <select id="studentClassSelect" onchange="app.handleClassSelect(this.value)"
+                class="w-1/2 px-4 py-3.5 rounded-xl bg-slate-900 border border-slate-700 focus:border-cyan-400 outline-none text-white text-base transition">
+                <option value="5 класс">5 класс</option>
+                <option value="6 класс">6 класс</option>
+                <option value="7 класс" selected>7 класс</option>
+                <option value="8 класс">8 класс</option>
+                <option value="9 класс">9 класс</option>
+                <option value="10 класс">10 класс</option>
+                <option value="11 класс">11 класс</option>
+                <option value="custom">Другой...</option>
+              </select>
+              <input id="studentClassCustom" type="text" placeholder="Укажи класс"
+                class="hidden w-1/2 px-4 py-3.5 rounded-xl bg-slate-900 border border-slate-700 focus:border-cyan-400 outline-none text-white text-base transition" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Если есть незавершённая попытка -->
+        <div id="resumeBanner" class="hidden mt-5 p-4 rounded-2xl bg-amber-500/15 border border-amber-400/40 flex flex-wrap items-center justify-between gap-4">
+          <div class="flex items-center gap-3">
+            <span class="text-2xl">💾</span>
+            <div>
+              <p class="font-bold text-amber-200 text-sm sm:text-base">Найдена незаконченная игра!</p>
+              <p id="resumeBannerText" class="text-xs sm:text-sm text-amber-100/80"></p>
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <button onclick="app.resumeSavedSession()"
+              class="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm transition shadow-lg">
+              Продолжить сборку
+            </button>
+            <button onclick="app.discardSavedSession()"
+              class="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition">
+              Сбросить
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Выбор пазла -->
+      <div>
+        <h3 class="text-xl sm:text-2xl font-bold text-white mb-4 flex items-center gap-2">
+          <span>🧩</span> Выбери картину-пазл (50 фрагментов):
+        </h3>
+        <div id="puzzleCardsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          <!-- Карточки пазлов генерируются через JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== ЭКРАН 2: ИГРОВОЙ ПРОЦЕСС (ВОПРОСЫ + ПАЗЛ) ==================== -->
+    <section id="screenGame" class="hidden space-y-5">
+      <!-- Верхняя панель прогресса -->
+      <div class="bg-slate-900/85 border border-indigo-500/30 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-xl">
+        <div class="flex items-center gap-3">
+          <div class="w-11 h-11 rounded-xl bg-indigo-600/30 border border-indigo-400/40 flex items-center justify-center text-xl">
+            🧩
+          </div>
+          <div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <span id="hudStudentName" class="font-bold text-white text-base"></span>
+              <span id="hudStudentClass" class="px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 text-xs font-bold"></span>
+            </div>
+            <p id="hudPuzzleTitle" class="text-xs text-cyan-300 font-medium"></p>
+          </div>
+        </div>
+
+        <!-- Счётчики -->
+        <div class="flex flex-wrap items-center gap-3 sm:gap-5">
+          <div class="bg-slate-950/80 px-3.5 py-2 rounded-xl border border-slate-800 text-center">
+            <div class="text-[11px] uppercase text-slate-400 font-bold">Открыто</div>
+            <div class="text-lg font-extrabold text-emerald-400 font-mono">
+              <span id="hudSolvedCount">0</span><span class="text-slate-500 text-sm">/50</span>
+            </div>
+          </div>
+          <div class="bg-slate-950/80 px-3.5 py-2 rounded-xl border border-slate-800 text-center">
+            <div class="text-[11px] uppercase text-slate-400 font-bold">Пропущено</div>
+            <div class="text-lg font-extrabold text-amber-400 font-mono" id="hudSkippedCount">0</div>
+          </div>
+          <div class="bg-slate-950/80 px-3.5 py-2 rounded-xl border border-slate-800 text-center">
+            <div class="text-[11px] uppercase text-slate-400 font-bold">Время</div>
+            <div class="text-lg font-extrabold text-cyan-300 font-mono" id="hudTimer">00:00</div>
+          </div>
+
+          <button onclick="app.openFinishConfirmModal()"
+            class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm transition shadow-lg shadow-emerald-600/20">
+            Завершить и сдать
+          </button>
+        </div>
+      </div>
+
+      <!-- Прогресс-бар -->
+      <div class="w-full h-3 bg-slate-900 rounded-full overflow-hidden border border-slate-800 p-0.5">
+        <div id="hudProgressBar" class="h-full rounded-full bg-gradient-to-r from-cyan-500 via-indigo-500 to-emerald-400 transition-all duration-500" style="width: 0%"></div>
+      </div>
+
+      <!-- Две колонки: Вопрос (слева) и Поле Пазла 10x5 (справа) -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+        <!-- КОЛОНКА ВОПРОСА (5 колонок на больших экранах) -->
+        <div class="lg:col-span-5 bg-slate-900/90 border border-indigo-500/35 rounded-3xl p-5 sm:p-6 shadow-2xl flex flex-col justify-between min-h-[430px]">
+          <div>
+            <!-- Мета-заголовок вопроса -->
+            <div class="flex items-center justify-between gap-2 mb-4">
+              <span id="qPieceBadge" class="px-3 py-1 rounded-xl bg-cyan-500/20 border border-cyan-400/40 text-cyan-300 font-mono font-bold text-xs">
+                Фрагмент #1
+              </span>
+              <span id="qTypeBadge" class="px-3 py-1 rounded-xl bg-indigo-500/20 border border-indigo-400/30 text-indigo-200 font-semibold text-xs">
+                Тест
+              </span>
+            </div>
+
+            <!-- Текст вопроса -->
+            <h3 id="qPromptText" class="text-lg sm:text-xl font-bold text-white leading-snug mb-4"></h3>
+
+            <!-- Блок кода (если есть) -->
+            <pre id="qCodeBlock" class="hidden mb-5 p-4 rounded-2xl bg-slate-950 border border-slate-800 text-cyan-300 text-sm sm:text-base overflow-x-auto leading-relaxed shadow-inner"></pre>
+
+            <!-- Область вариантов ответа (динамическая) -->
+            <div id="qAnswerArea" class="space-y-3"></div>
+
+            <!-- Обратная связь при ошибке/пропуске -->
+            <div id="qFeedbackBox" class="hidden mt-4 p-3.5 rounded-2xl text-sm font-medium border"></div>
+          </div>
+
+          <!-- Кнопки управления вопросом -->
+          <div class="mt-6 pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
+            <button id="skipQuestionBtn" onclick="app.skipCurrentQuestion()"
+              class="px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 font-semibold text-sm transition flex items-center gap-2">
+              <span>⏭️</span>
+              <span>Пропустить</span>
+            </button>
+
+            <button id="submitAnswerBtn" onclick="app.submitCurrentAnswer()"
+              class="flex-1 sm:flex-none px-6 py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-extrabold text-sm sm:text-base transition shadow-lg shadow-cyan-500/25 flex items-center justify-center gap-2">
+              <span>Проверить ответ</span>
+              <span>✨</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- КОЛОНКА ПАЗЛА 10x5 (7 колонок на больших экранах) -->
+        <div class="lg:col-span-7 bg-slate-900/90 border border-indigo-500/35 rounded-3xl p-4 sm:p-6 shadow-2xl">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div class="flex items-center gap-2">
+              <span class="text-lg">🖼️</span>
+              <h3 class="font-bold text-white text-base sm:text-lg">Поле пазла (10 × 5)</h3>
+            </div>
+            <span class="text-xs text-slate-400">
+              Кликни на закрытый номер, чтобы перейти к его вопросу
+            </span>
+          </div>
+
+          <!-- Контейнер пазла с соотношением сторон 2:1 (10 колонок на 5 рядов) -->
+          <div class="relative w-full aspect-[2/1] rounded-2xl overflow-hidden border-2 border-indigo-500/40 bg-slate-950 shadow-inner select-none">
+            <!-- Фоновая готовая картинка (Canvas dataURL), просвечивает только в открытых ячейках -->
+            <img id="puzzleFullImage" alt="Пазл" class="w-full h-full object-cover block" />
+
+            <!-- Сетка 50 кусочков поверх картинки -->
+            <div id="puzzleGridOverlay" class="absolute inset-0 grid grid-cols-10 grid-rows-5">
+              <!-- 50 ячеек генерируются JS -->
+            </div>
+          </div>
+
+          <!-- Подсказка под пазлом -->
+          <div class="mt-3 flex flex-wrap items-center justify-between text-xs text-slate-400 gap-2">
+            <div class="flex items-center gap-4">
+              <span class="flex items-center gap-1.5">
+                <span class="w-3 h-3 rounded-sm bg-emerald-500/30 border border-emerald-400 inline-block"></span> Открыт
+              </span>
+              <span class="flex items-center gap-1.5">
+                <span class="w-3 h-3 rounded-sm bg-slate-800 border border-cyan-400 inline-block"></span> Текущий вопрос
+              </span>
+              <span class="flex items-center gap-1.5">
+                <span class="w-3 h-3 rounded-sm bg-slate-900 border border-slate-700 inline-block"></span> Закрыт
+              </span>
+            </div>
+            <span id="remainingQueueLabel" class="font-mono text-slate-300"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== ЭКРАН 3: РЕЗУЛЬТАТ УЧЕНИКА ==================== -->
+    <section id="screenResult" class="hidden max-w-4xl mx-auto space-y-6">
+      <div class="bg-slate-900/90 border border-emerald-500/40 rounded-3xl p-6 sm:p-8 shadow-2xl text-center">
+        <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 text-3xl mb-4">
+          🏆
+        </div>
+        <h2 id="resultHeading" class="text-2xl sm:text-4xl font-extrabold text-white mb-2">
+          Отличная работа!
+        </h2>
+        <p id="resultSubheading" class="text-slate-300 text-sm sm:text-base mb-6"></p>
+
+        <!-- Метрики -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
+          <div class="bg-slate-950/80 p-4 rounded-2xl border border-slate-800">
+            <div class="text-xs text-slate-400 uppercase font-bold">Собрано пазлов</div>
+            <div id="resScore" class="text-2xl sm:text-3xl font-extrabold text-emerald-400 font-mono mt-1">0/50</div>
+          </div>
+          <div class="bg-slate-950/80 p-4 rounded-2xl border border-slate-800">
+            <div class="text-xs text-slate-400 uppercase font-bold">Процент</div>
+            <div id="resPercent" class="text-2xl sm:text-3xl font-extrabold text-cyan-400 font-mono mt-1">0%</div>
+          </div>
+          <div class="bg-slate-950/80 p-4 rounded-2xl border border-slate-800">
+            <div class="text-xs text-slate-400 uppercase font-bold">Время</div>
+            <div id="resTime" class="text-2xl sm:text-3xl font-extrabold text-amber-300 font-mono mt-1">00:00</div>
+          </div>
+          <div class="bg-slate-950/80 p-4 rounded-2xl border border-slate-800">
+            <div class="text-xs text-slate-400 uppercase font-bold">Статус</div>
+            <div class="text-sm sm:text-base font-bold text-indigo-300 mt-2">Отправлено учителю ✅</div>
+          </div>
+        </div>
+
+        <!-- Итоговый собранный пазл ученика -->
+        <div class="max-w-2xl mx-auto">
+          <p class="text-xs uppercase tracking-wider text-slate-400 font-bold mb-2">
+            Твой итоговый пазл (именно его увидит учитель):
+          </p>
+          <div id="resultPuzzleContainer" class="relative w-full aspect-[2/1] rounded-2xl overflow-hidden border-2 border-emerald-400/50 bg-slate-950 shadow-2xl">
+            <!-- Заполняется JS -->
+          </div>
+        </div>
+
+        <div class="mt-8 flex flex-wrap items-center justify-center gap-4">
+          <button onclick="app.goHome()"
+            class="px-6 py-3.5 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-white font-bold text-base transition shadow-lg">
+            Выбрать другой пазл
+          </button>
+          <button onclick="app.openTeacherLogin()"
+            class="px-6 py-3.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 font-semibold text-base transition">
+            Открыть журнал учителя
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== ЭКРАН 4: ПАНЕЛЬ УЧИТЕЛЯ ==================== -->
+    <section id="screenTeacher" class="hidden space-y-6">
+      <div class="bg-slate-900/90 border border-indigo-500/40 rounded-3xl p-6 shadow-2xl flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <span class="px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-bold uppercase tracking-wider">
+            Кабинет преподавателя
+          </span>
+          <h2 class="text-2xl sm:text-3xl font-extrabold text-white mt-2">
+            Результаты и проверка пазлов учеников
+          </h2>
+          <p class="text-slate-400 text-sm mt-1">
+            Просматривайте собранные картины, выставляйте оценку и оставляйте комментарии.
+          </p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2.5">
+          <button onclick="app.exportTeacherCSV()"
+            class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm transition flex items-center gap-2 shadow-lg">
+            <span>📥</span>
+            <span>Скачать отчёт (CSV)</span>
+          </button>
+          <button onclick="app.goHome()"
+            class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs sm:text-sm transition">
+            ← На главную
+          </button>
+        </div>
+      </div>
+
+      <!-- Фильтры -->
+      <div class="bg-slate-900/75 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4">
+        <div class="flex flex-wrap items-center gap-3">
+          <input id="teacherSearchInput" type="text" oninput="app.renderTeacherTable()" placeholder="Поиск по ФИО или классу..."
+            class="px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700 focus:border-cyan-400 outline-none text-sm text-white w-64" />
+          <select id="teacherPuzzleFilter" onchange="app.renderTeacherTable()"
+            class="px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700 focus:border-cyan-400 outline-none text-sm text-white">
+            <option value="all">Все пазлы</option>
+            <option value="cybercat">Кибер-Кот в Алматы 2080</option>
+            <option value="marsrover">Космический Питон-Ровер</option>
+            <option value="crystal">Магический Кристалл Кода</option>
+            <option value="pirate">Пиратский Код Сокровищ</option>
+          </select>
+        </div>
+        <div class="text-xs text-slate-400">
+          Всего работ в журнале: <strong id="teacherTotalCount" class="text-white">0</strong>
+        </div>
+      </div>
+
+      <!-- Список карточек работ учеников -->
+      <div id="teacherSubmissionsList" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Карточки учеников генерируются JS -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ==================== МОДАЛЬНОЕ ОКНО: ВХОД ДЛЯ УЧИТЕЛЯ ==================== -->
+  <div id="teacherLoginModal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-indigo-500/40 rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-xl font-extrabold text-white flex items-center gap-2">
+          <span>🔐</span> Вход для учителя
+        </h3>
+        <button onclick="app.closeModal('teacherLoginModal')" class="text-slate-400 hover:text-white text-xl font-bold px-2">✕</button>
+      </div>
+      <p class="text-sm text-slate-300 mb-4">
+        Введите логин и пароль преподавателя для просмотра собранных пазлов и выставления оценок.
+      </p>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-400 mb-1">Логин</label>
+          <input id="teacherLoginUser" type="text" placeholder="Введите логин"
+            class="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-700 focus:border-cyan-400 outline-none text-white text-sm" />
+        </div>
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-400 mb-1">Пароль / PIN</label>
+          <input id="teacherLoginPass" type="password" placeholder="••••"
+            onkeydown="if(event.key==='Enter') app.verifyTeacherLogin()"
+            class="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-700 focus:border-cyan-400 outline-none text-white text-sm" />
+        </div>
+        <div class="p-3 rounded-xl bg-indigo-950/60 border border-indigo-500/30 text-xs text-indigo-200 flex items-center justify-between">
+          <span>Демо-доступ: <strong>shopizhuma</strong> / <strong>2288</strong></span>
+          <button type="button" onclick="app.fillDemoTeacherCreds()" class="underline text-cyan-300 hover:text-cyan-200 font-semibold">
+            Автозаполнить
+          </button>
+        </div>
+      </div>
+      <div class="mt-6 flex justify-end gap-3">
+        <button onclick="app.closeModal('teacherLoginModal')"
+          class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-semibold">
+          Отмена
+        </button>
+        <button onclick="app.verifyTeacherLogin()"
+          class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold shadow-lg">
+          Войти в кабинет
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== МОДАЛЬНОЕ ОКНО: ПОДТВЕРЖДЕНИЕ ЗАВЕРШЕНИЯ ==================== -->
+  <div id="finishConfirmModal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-amber-500/40 rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl">
+      <h3 class="text-xl font-extrabold text-white mb-2 flex items-center gap-2">
+        <span>🏁</span> Завершить сборку пазла?
+      </h3>
+      <p id="finishConfirmText" class="text-sm text-slate-300 leading-relaxed mb-6"></p>
+      <div class="flex justify-end gap-3">
+        <button onclick="app.closeModal('finishConfirmModal')"
+          class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-semibold">
+          Вернуться к вопросам
+        </button>
+        <button onclick="app.finishAttempt()"
+          class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold shadow-lg">
+          Да, сдать учителю
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== МОДАЛЬНОЕ ОКНО: ДЕТАЛЬНЫЙ ПРОСМОТР ПАЗЛА УЧИТЕЛЕМ ==================== -->
+  <div id="teacherInspectModal" class="hidden fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-slate-900 border border-cyan-500/40 rounded-3xl max-w-3xl w-full p-6 shadow-2xl my-8">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h3 id="inspectStudentTitle" class="text-xl font-extrabold text-white"></h3>
+          <p id="inspectPuzzleSubtitle" class="text-xs text-cyan-300"></p>
+        </div>
+        <button onclick="app.closeModal('teacherInspectModal')" class="text-slate-400 hover:text-white text-2xl font-bold px-2">✕</button>
+      </div>
+      <div id="inspectPuzzleVisual" class="relative w-full aspect-[2/1] rounded-2xl overflow-hidden border-2 border-indigo-500/50 bg-slate-950 mb-4"></div>
+      <div id="inspectStatsRow" class="text-sm text-slate-300 flex flex-wrap justify-between gap-2 bg-slate-950/70 p-3.5 rounded-xl border border-slate-800"></div>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * ГЕНЕРАТОР КРАСОЧНЫХ ИЛЛЮСТРАЦИЙ ДЛЯ ПАЗЛОВ (CANVAS ART)
+     * Гарантирует 100% автономную работу без внешних картинок и битых ссылок.
+     */
+    const PuzzleArtGenerator = {
+      cache: {},
+
+      getImageDataUrl(themeId) {
+        if (this.cache[themeId]) return this.cache[themeId];
+        const canvas = document.createElement('canvas');
+        canvas.width = 1000;
+        canvas.height = 500;
+        const ctx = canvas.getContext('2d');
+
+        if (themeId === 'cybercat') this.drawCyberCat(ctx, 1000, 500);
+        else if (themeId === 'marsrover') this.drawMarsRover(ctx, 1000, 500);
+        else if (themeId === 'crystal') this.drawMagicCrystal(ctx, 1000, 500);
+        else this.drawPirateTreasure(ctx, 1000, 500);
+
+        const url = canvas.toDataURL('image/png');
+        this.cache[themeId] = url;
+        return url;
+      },
+
+      // 1. Кибер-Кот в Алматы 2080
+      drawCyberCat(ctx, w, h) {
+        const bg = ctx.createLinearGradient(0, 0, w, h);
+        bg.addColorStop(0, '#090d16');
+        bg.addColorStop(0.5, '#1e1b4b');
+        bg.addColorStop(1, '#311042');
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, w, h);
+
+        // Неоновая луна
+        const moon = ctx.createRadialGradient(780, 130, 10, 780, 130, 110);
+        moon.addColorStop(0, '#fde047');
+        moon.addColorStop(0.6, '#f43f5e');
+        moon.addColorStop(1, 'rgba(244, 63, 94, 0)');
+        ctx.fillStyle = moon;
+        ctx.beginPath();
+        ctx.arc(780, 130, 110, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Горы Заилийского Алатау на фоне
+        ctx.fillStyle = '#1e293b';
+        ctx.beginPath();
+        ctx.moveTo(0, 380);
+        ctx.lineTo(180, 170);
+        ctx.lineTo(350, 310);
+        ctx.lineTo(540, 130);
+        ctx.lineTo(740, 290);
+        ctx.lineTo(900, 160);
+        ctx.lineTo(1000, 260);
+        ctx.lineTo(1000, 500);
+        ctx.lineTo(0, 500);
+        ctx.fill();
+
+        // Снежные вершины
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(145, 212); ctx.lineTo(180, 170); ctx.lineTo(220, 205);
+        ctx.moveTo(495, 175); ctx.lineTo(540, 130); ctx.lineTo(585, 168);
+        ctx.stroke();
+
+        // Небоскрёбы и телебашня Кок-Тобе
+        const buildings = [
+          { x: 40, y: 240, bw: 70, bh: 260, c: '#0f172a' },
+          { x: 130, y: 200, bw: 85, bh: 300, c: '#172554' },
+          { x: 760, y: 210, bw: 90, bh: 290, c: '#1e1b4b' },
+          { x: 870, y: 180, bw: 95, bh: 320, c: '#0f172a' }
+        ];
+        buildings.forEach(b => {
+          ctx.fillStyle = b.c;
+          ctx.fillRect(b.x, b.y, b.bw, b.bh);
+          ctx.fillStyle = '#22d3ee';
+          for (let wy = b.y + 20; wy < 470; wy += 28) {
+            for (let wx = b.x + 12; wx < b.x + b.bw - 15; wx += 20) {
+              if ((wx + wy) % 3 !== 0) ctx.fillRect(wx, wy, 8, 12);
+            }
+          }
+        });
+
+        // Кибер-Кот в центре
+        ctx.save();
+        ctx.translate(490, 310);
+        // Уши
+        ctx.fillStyle = '#1e293b';
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(-110, -40); ctx.lineTo(-135, -145); ctx.lineTo(-35, -95); ctx.closePath();
+        ctx.fill(); ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(110, -40); ctx.lineTo(135, -145); ctx.lineTo(35, -95); ctx.closePath();
+        ctx.fill(); ctx.stroke();
+
+        // Голова кота
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 130, 105, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#a855f7';
+        ctx.lineWidth = 6;
+        ctx.stroke();
+
+        // Кибер-визор (очки)
+        const visor = ctx.createLinearGradient(-105, -20, 105, 20);
+        visor.addColorStop(0, '#06b6d4');
+        visor.addColorStop(0.5, '#3b82f6');
+        visor.addColorStop(1, '#ec4899');
+        ctx.fillStyle = visor;
+        ctx.beginPath();
+        ctx.roundRect(-105, -35, 210, 52, 18);
+        ctx.fill();
+
+        // Текст на визоре
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 22px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('>>> PYTHON 3.13', 0, -2);
+
+        // Нос и усы
+        ctx.fillStyle = '#f43f5e';
+        ctx.beginPath();
+        ctx.moveTo(-12, 35); ctx.lineTo(12, 35); ctx.lineTo(0, 48); ctx.closePath();
+        ctx.fill();
+
+        ctx.strokeStyle = '#22d3ee';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(-85, 42); ctx.lineTo(-155, 30);
+        ctx.moveTo(-85, 55); ctx.lineTo(-155, 62);
+        ctx.moveTo(85, 42); ctx.lineTo(155, 30);
+        ctx.moveTo(85, 55); ctx.lineTo(155, 62);
+        ctx.stroke();
+        ctx.restore();
+
+        // Надпись снизу
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
+        ctx.fillRect(0, 445, w, 55);
+        ctx.fillStyle = '#38bdf8';
+        ctx.font = 'bold 24px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('CYBER-CAT // ALMATY 2080 // PYTHON MASTER', w / 2, 480);
+      },
+
+      // 2. Космический Питон-Ровер
+      drawMarsRover(ctx, w, h) {
+        const sky = ctx.createLinearGradient(0, 0, 0, h);
+        sky.addColorStop(0, '#020617');
+        sky.addColorStop(0.55, '#451a03');
+        sky.addColorStop(1, '#9a3412');
+        ctx.fillStyle = sky;
+        ctx.fillRect(0, 0, w, h);
+
+        // Звёзды
+        ctx.fillStyle = '#ffffff';
+        for (let i = 0; i < 90; i++) {
+          const sx = (i * 137) % w;
+          const sy = (i * 73) % 240;
+          ctx.fillRect(sx, sy, (i % 3) + 1, (i % 3) + 1);
+        }
+
+        // Планета с кольцами
+        ctx.fillStyle = '#38bdf8';
+        ctx.beginPath();
+        ctx.arc(820, 110, 48, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#bae6fd';
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.ellipse(820, 110, 88, 18, -0.25, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Поверхность Марса
+        ctx.fillStyle = '#c2410c';
+        ctx.beginPath();
+        ctx.moveTo(0, 340);
+        ctx.quadraticCurveTo(300, 290, 620, 350);
+        ctx.quadraticCurveTo(830, 380, 1000, 320);
+        ctx.lineTo(1000, 500);
+        ctx.lineTo(0, 500);
+        ctx.fill();
+
+        // Кратеры
+        ctx.fillStyle = '#7c2d12';
+        ctx.beginPath(); ctx.ellipse(210, 420, 65, 18, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(790, 435, 85, 22, 0, 0, Math.PI * 2); ctx.fill();
+
+        // Ровер
+        ctx.save();
+        ctx.translate(480, 330);
+        // Корпус
+        ctx.fillStyle = '#f8fafc';
+        ctx.strokeStyle = '#0284c7';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.roundRect(-120, -65, 240, 75, 16);
+        ctx.fill(); ctx.stroke();
+
+        // Солнечная панель
+        ctx.fillStyle = '#1d4ed8';
+        ctx.fillRect(-100, -52, 200, 30);
+
+        // Мачта с камерой
+        ctx.fillStyle = '#cbd5e1';
+        ctx.fillRect(65, -145, 18, 80);
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.roundRect(45, -175, 65, 36, 10);
+        ctx.fill();
+        // Объектив камеры
+        ctx.fillStyle = '#22d3ee';
+        ctx.beginPath();
+        ctx.arc(85, -157, 11, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Колёса (3 больших)
+        [-90, 0, 90].forEach(wx => {
+          ctx.fillStyle = '#1e293b';
+          ctx.beginPath(); ctx.arc(wx, 32, 34, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 4; ctx.stroke();
+          ctx.fillStyle = '#94a3b8';
+          ctx.beginPath(); ctx.arc(wx, 32, 12, 0, Math.PI * 2); ctx.fill();
+        });
+        ctx.restore();
+
+        ctx.fillStyle = 'rgba(2, 6, 23, 0.78)';
+        ctx.fillRect(0, 445, w, 55);
+        ctx.fillStyle = '#fbbf24';
+        ctx.font = 'bold 24px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('MARS PYTHON ROVER // MISSION COMPLETE', w / 2, 480);
+      },
+
+      // 3. Магический Кристалл Кода
+      drawMagicCrystal(ctx, w, h) {
+        const bg = ctx.createRadialGradient(500, 230, 30, 500, 250, 560);
+        bg.addColorStop(0, '#312e81');
+        bg.addColorStop(0.55, '#1e1b4b');
+        bg.addColorStop(1, '#090d16');
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, w, h);
+
+        // Магические круги рун
+        ctx.strokeStyle = 'rgba(167, 139, 250, 0.35)';
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(500, 240, 195, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([12, 10]);
+        ctx.beginPath(); ctx.arc(500, 240, 165, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Кристалл по центру
+        ctx.save();
+        ctx.translate(500, 235);
+        const grad = ctx.createLinearGradient(-80, -140, 80, 140);
+        grad.addColorStop(0, '#67e8f9');
+        grad.addColorStop(0.5, '#a855f7');
+        grad.addColorStop(1, '#ec4899');
+        ctx.fillStyle = grad;
+
+        ctx.beginPath();
+        ctx.moveTo(0, -155);
+        ctx.lineTo(95, -55);
+        ctx.lineTo(75, 95);
+        ctx.lineTo(0, 155);
+        ctx.lineTo(-75, 95);
+        ctx.lineTo(-95, -55);
+        ctx.closePath();
+        ctx.fill();
+
+        // Грани кристалла
+        ctx.strokeStyle = 'rgba(255,255,255,0.65)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(0, -155); ctx.lineTo(0, 155);
+        ctx.moveTo(-95, -55); ctx.lineTo(95, -55);
+        ctx.moveTo(-75, 95); ctx.lineTo(75, 95);
+        ctx.stroke();
+
+        // Символ Python внутри кристалла
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 42px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('def magic():', 0, 14);
+        ctx.restore();
+
+        // Парящие осколки
+        const shards = [
+          { x: 220, y: 150, s: 28 },
+          { x: 780, y: 160, s: 32 },
+          { x: 260, y: 340, s: 24 },
+          { x: 740, y: 330, s: 26 }
+        ];
+        shards.forEach(sh => {
+          ctx.fillStyle = '#38bdf8';
+          ctx.beginPath();
+          ctx.moveTo(sh.x, sh.y - sh.s);
+          ctx.lineTo(sh.x + sh.s * 0.7, sh.y);
+          ctx.lineTo(sh.x, sh.y + sh.s);
+          ctx.lineTo(sh.x - sh.s * 0.7, sh.y);
+          ctx.closePath();
+          ctx.fill();
+        });
+
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
+        ctx.fillRect(0, 445, w, 55);
+        ctx.fillStyle = '#e879f9';
+        ctx.font = 'bold 24px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('ARCANE CRYSTAL OF PYTHON // LEVEL 50 UNLOCKED', w / 2, 480);
+      },
+
+      // 4. Пиратский Код Сокровищ
+      drawPirateTreasure(ctx, w, h) {
+        const sky = ctx.createLinearGradient(0, 0, 0, 320);
+        sky.addColorStop(0, '#0284c7');
+        sky.addColorStop(1, '#fde68a');
+        ctx.fillStyle = sky;
+        ctx.fillRect(0, 0, w, 320);
+
+        // Солнце
+        ctx.fillStyle = '#fef08a';
+        ctx.beginPath(); ctx.arc(820, 95, 55, 0, Math.PI * 2); ctx.fill();
+
+        // Море
+        ctx.fillStyle = '#0369a1';
+        ctx.fillRect(0, 310, w, 190);
+
+        // Остров
+        ctx.fillStyle = '#f59e0b';
+        ctx.beginPath();
+        ctx.ellipse(500, 365, 360, 85, 0, Math.PI, Math.PI * 2);
+        ctx.fill();
+
+        // Пальма слева
+        ctx.strokeStyle = '#78350f';
+        ctx.lineWidth = 14;
+        ctx.beginPath();
+        ctx.moveTo(250, 340); ctx.quadraticCurveTo(220, 220, 270, 140);
+        ctx.stroke();
+
+        ctx.fillStyle = '#16a34a';
+        [-0.8, -0.3, 0.3, 0.8].forEach(ang => {
+          ctx.save();
+          ctx.translate(270, 140);
+          ctx.rotate(ang);
+          ctx.beginPath();
+          ctx.ellipse(45, 0, 55, 16, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        });
+
+        // Сундук с сокровищами по центру
+        ctx.save();
+        ctx.translate(500, 315);
+        // Основание сундука
+        ctx.fillStyle = '#92400e';
+        ctx.strokeStyle = '#fbbf24';
+        ctx.lineWidth = 6;
+        ctx.fillRect(-95, -20, 190, 85);
+        ctx.strokeRect(-95, -20, 190, 85);
+
+        // Золото внутри
+        ctx.fillStyle = '#fde047';
+        ctx.beginPath();
+        ctx.ellipse(0, -22, 85, 25, 0, Math.PI, Math.PI * 2);
+        ctx.fill();
+
+        // Открытая крышка
+        ctx.fillStyle = '#78350f';
+        ctx.fillRect(-95, -75, 190, 42);
+        ctx.strokeRect(-95, -75, 190, 42);
+
+        // Замок
+        ctx.fillStyle = '#fbbf24';
+        ctx.fillRect(-16, -5, 32, 36);
+        ctx.restore();
+
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.82)';
+        ctx.fillRect(0, 445, w, 55);
+        ctx.fillStyle = '#fde047';
+        ctx.font = 'bold 24px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('PIRATE TREASURE OF PYTHON // ALL 50 KEYS FOUND!', w / 2, 480);
+      }
+    };
+
+    /**
+     * ГЕНЕРАТОР БАНКА ИЗ 200 УНИКАЛЬНЫХ ВОПРОСОВ ПО PYTHON (ПО 50 НА КАЖДЫЙ ПАЗЛ)
+     * Типы вопросов:
+     * - 'mcq': Тест с выбором одного варианта
+     * - 'open': Открытый вопрос (ввод текста/кода с умной нормализацией)
+     * - 'match': Соответствие (3 пары через выпадающие списки)
+     * - 'tf': Верно / Неверно
+     */
+    const QuestionBankBuilder = {
+      buildAllPuzzles() {
+        const themes = [
+          {
+            id: 'cybercat',
+            title: 'Кибер-Кот в Алматы 2080',
+            badge: 'Неон и Алгоритмы',
+            desc: 'Помоги кибер-коту взломать матрицу мегаполиса: переменные, строки, условия и циклы.',
+            accent: 'from-cyan-500 to-fuchsia-600'
+          },
+          {
+            id: 'marsrover',
+            title: 'Космический Питон-Ровер',
+            badge: 'Марсианская миссия',
+            desc: 'Управляй марсоходом с помощью списков, срезов, функций и логических операторов.',
+            accent: 'from-amber-500 to-red-600'
+          },
+          {
+            id: 'crystal',
+            title: 'Магический Кристалл Кода',
+            badge: 'Академия магии Python',
+            desc: 'Раскрой тайны словарей, множеств, кортежей и встроенных функций Python.',
+            accent: 'from-indigo-500 to-purple-600'
+          },
+          {
+            id: 'pirate',
+            title: 'Пиратский Код Сокровищ',
+            badge: 'Остров сокровищ',
+            desc: 'Расшифруй карту капитана: смешанный курс от базового синтаксиса до хитрых задач!',
+            accent: 'from-emerald-500 to-teal-600'
+          }
+        ];
+
+        // Генерируем 50 уникальных вопросов для каждой из 4 тем
+        themes.forEach((theme, idx) => {
+          theme.questions = this.generate50ForTheme(theme.id, idx);
+        });
+
+        return themes;
+      },
+
+      generate50ForTheme(themeId, seedOffset) {
+        const list = [];
+
+        // --- БЛОК 1: БАЗОВЫЕ КОНЦЕПЦИИ И ТИПЫ ДАННЫХ (10 вопросов) ---
+        const block1 = {
+          cybercat: [
+            { type: 'mcq', prompt: 'Какая функция выводит текст в консоль Python?', code: null, options: ['echo()', 'print()', 'write()', 'console.log()'], answer: 'print()' },
+            { type: 'open', prompt: 'Что выведет этот код?', code: 'x = 7\ny = 3\nprint(x + y * 2)', answer: ['13'] },
+            { type: 'tf', prompt: 'Верно ли, что в Python имя переменной может начинаться с цифры (например, 1cat)?', code: null, answer: 'Неверно' },
+            { type: 'match', prompt: 'Сопоставь тип данных Python и его обозначение:', pairs: [['Целое число', 'int'], ['Дробное число', 'float'], ['Строка текста', 'str']] },
+            { type: 'open', prompt: 'Напиши название функции, которая запрашивает ввод данных с клавиатуры от пользователя.', code: 'name = ____("Введите имя: ")', answer: ['input', 'input()'] },
+            { type: 'mcq', prompt: 'Какой оператор в Python возвращает остаток от деления?', code: 'print(17 ? 5)  # выведет 2', options: ['/', '//', '%', '**'], answer: '%' },
+            { type: 'open', prompt: 'Что выведет программа?', code: 'a = "Cyber"\nb = "Cat"\nprint(a + b)', answer: ['CyberCat', '"CyberCat"', "'CyberCat'"] },
+            { type: 'tf', prompt: 'Верно ли, что оператор // выполняет целочисленное деление?', code: 'print(9 // 2)  # результат 4', answer: 'Верно' },
+            { type: 'mcq', prompt: 'Как обозначается однострочный комментарий в Python?', code: null, options: ['// комментарий', '/* комментарий */', '# комментарий', '-- комментарий'], answer: '# комментарий' },
+            { type: 'open', prompt: 'Чему равно значение выражения 2 ** 4 в Python?', code: 'print(2 ** 4)', answer: ['16'] }
+          ],
+          marsrover: [
+            { type: 'mcq', prompt: 'Как создать пустой список в Python?', code: null, options: ['rover = ()', 'rover = []', 'rover = {}', 'rover = <>'], answer: 'rover = []' },
+            { type: 'open', prompt: 'Что выведет код?', code: 'sectors = [10, 20, 30, 40]\nprint(sectors[1])', answer: ['20'] },
+            { type: 'tf', prompt: 'Верно ли, что индексация элементов списка в Python начинается с 1?', code: null, answer: 'Неверно' },
+            { type: 'match', prompt: 'Сопоставь метод списка с его действием:', pairs: [['append(x)', 'Добавляет элемент в конец'], ['pop()', 'Удаляет последний элемент'], ['sort()', 'Сортирует список']] },
+            { type: 'open', prompt: 'Какая встроенная функция возвращает количество элементов в списке?', code: 'samples = ["Fe", "Si", "O2"]\nprint(____(samples))', answer: ['len', 'len()'] },
+            { type: 'mcq', prompt: 'Какой индекс у последнего элемента любого непустого списка?', code: null, options: ['0', '1', '-1', 'last'], answer: '-1' },
+            { type: 'open', prompt: 'Что выведет этот срез списка?', code: 'nums = [5, 10, 15, 20, 25]\nprint(nums[1:3])', answer: ['[10, 15]', '[10,15]'] },
+            { type: 'tf', prompt: 'Верно ли, что списки в Python являются изменяемыми (mutable)?', code: null, answer: 'Верно' },
+            { type: 'mcq', prompt: 'Что выведет данный код?', code: 'a = [1, 2]\nb = a * 2\nprint(len(b))', options: ['2', '3', '4', 'Ошибка'], answer: '4' },
+            { type: 'open', prompt: 'Какое логическое значение (True или False) вернёт выражение?', code: 'print(15 > 10 and 3 == 5)', answer: ['False'] }
+          ],
+          crystal: [
+            { type: 'mcq', prompt: 'С помощью какого ключевого слова создаётся функция в Python?', code: null, options: ['func', 'function', 'def', 'create'], answer: 'def' },
+            { type: 'open', prompt: 'Что вернёт вызов этой функции?', code: 'def spell(x):\n    return x * 3\n\nprint(spell(4))', answer: ['12'] },
+            { type: 'tf', prompt: 'Верно ли, что словарь (dict) хранит данные в виде пар «ключ: значение»?', code: null, answer: 'Верно' },
+            { type: 'match', prompt: 'Сопоставь коллекцию Python и её скобки при создании:', pairs: [['Список (list)', '[1, 2, 3]'], ['Кортеж (tuple)', '(1, 2, 3)'], ['Множество (set)', '{1, 2, 3}']] },
+            { type: 'open', prompt: 'Какое ключевое слово возвращает результат из функции?', code: 'def add(a, b):\n    ______ a + b', answer: ['return'] },
+            { type: 'mcq', prompt: 'Сколько элементов окажется в множестве s?', code: 's = {1, 2, 2, 3, 3, 3}\nprint(len(s))', options: ['6', '3', '1', 'Ошибка'], answer: '3' },
+            { type: 'open', prompt: 'Что выведет обращение к словарю?', code: 'mana = {"fire": 50, "ice": 80}\nprint(mana["ice"])', answer: ['80'] },
+            { type: 'tf', prompt: 'Верно ли, что кортеж (tuple) можно изменять после создания так же, как список?', code: null, answer: 'Неверно' },
+            { type: 'mcq', prompt: 'Какая функция преобразует строку "42" в целое число?', code: null, options: ['str("42")', 'int("42")', 'num("42")', 'float("42")'], answer: 'int("42")' },
+            { type: 'open', prompt: 'Что выведет встроенная функция max()?', code: 'print(max(14, 99, 23, 7))', answer: ['99'] }
+          ],
+          pirate: [
+            { type: 'mcq', prompt: 'Какое ключевое слово запускает цикл по элементам последовательности?', code: null, options: ['repeat', 'for', 'loop', 'until'], answer: 'for' },
+            { type: 'open', prompt: 'Сколько раз выполнится этот цикл?', code: 'for i in range(5):\n    print("Золото!")', answer: ['5'] },
+            { type: 'tf', prompt: 'Верно ли, что range(1, 4) генерирует числа 1, 2, 3, 4?', code: null, answer: 'Неверно' },
+            { type: 'match', prompt: 'Сопоставь оператор управления циклом с его ролью:', pairs: [['break', 'Досрочно прерывает цикл'], ['continue', 'Переходит к следующей итерации'], ['while', 'Цикл с условием']] },
+            { type: 'open', prompt: 'Какое слово пишется в условном операторе для ветки «иначе, если»?', code: 'if coins > 10:\n    print("Богат")\n____ coins == 10:\n    print("Ровно")', answer: ['elif'] },
+            { type: 'mcq', prompt: 'Что выведет строковый метод .upper()?', code: 'ship = "pearl"\nprint(ship.upper())', options: ['Pearl', 'PEARL', 'pearl', 'pEARL'], answer: 'PEARL' },
+            { type: 'open', prompt: 'Чему будет равна переменная total после цикла?', code: 'total = 0\nfor x in [2, 3, 5]:\n    total += x\nprint(total)', answer: ['10'] },
+            { type: 'tf', prompt: 'Верно ли, что в Python отступы (пробелы в начале строки) определяют блоки кода?', code: null, answer: 'Верно' },
+            { type: 'mcq', prompt: 'Какой оператор проверяет равенство двух значений в условии if?', code: null, options: ['=', '==', '!=', ':='], answer: '==' },
+            { type: 'open', prompt: 'Что выведет код?', code: 'word = "ПИРАТ"\nprint(word[0])', answer: ['П', '"П"', "'П'"] }
+          ]
+        };
+
+        list.push(...block1[themeId]);
+
+        // --- БЛОК 2: 20 РАЗНООБРАЗНЫХ ДИНАМИЧЕСКИХ ЗАДАЧ НА ВЫЧИСЛЕНИЕ И ПРЕДСКАЗАНИЕ ВЫВОДА ---
+        for (let i = 1; i <= 20; i++) {
+          const a = (i * 3 + seedOffset * 2) % 15 + 2;
+          const b = (i * 5 + seedOffset) % 9 + 2;
+          const variant = i % 5;
+
+          if (variant === 0) {
+            // Арифметика и приоритет операций
+            const res = a + b * 3;
+            list.push({
+              type: 'open',
+              prompt: `Задача #${list.length + 1}: Вычисли результат выполнения программы.`,
+              code: `a = ${a}\nb = ${b}\nprint(a + b * 3)`,
+              answer: [String(res)]
+            });
+          } else if (variant === 1) {
+            // Строковые операции
+            const words = ['Python', 'Almaty', 'Code', 'Rover', 'Matrix', 'Ocean', 'Star', 'Robot'];
+            const w = words[(i + seedOffset) % words.length];
+            const idx = i % w.length;
+            list.push({
+              type: 'mcq',
+              prompt: `Задача #${list.length + 1}: Какой символ будет выведен на экран?`,
+              code: `text = "${w}"\nprint(text[${idx}])`,
+              options: Array.from(new Set([w[idx], w[0], w[w.length - 1], 'Ошибка'])).slice(0, 4).concat(
+                Array.from(new Set([w[idx], w[0], w[w.length - 1], 'Ошибка'])).length < 4 ? ['None'] : []
+              ),
+              answer: w[idx]
+            });
+          } else if (variant === 2) {
+            // Цикл for с range
+            const limit = (i % 4) + 3;
+            let sum = 0;
+            for (let k = 0; k < limit; k++) sum += k;
+            list.push({
+              type: 'open',
+              prompt: `Задача #${list.length + 1}: Чему будет равна переменная s после завершения цикла?`,
+              code: `s = 0\nfor i in range(${limit}):\n    s += i\nprint(s)`,
+              answer: [String(sum)]
+            });
+          } else if (variant === 3) {
+            // Условный оператор if / else
+            const threshold = 10;
+            const val = a * 2;
+            const isBigger = val > threshold;
+            list.push({
+              type: 'tf',
+              prompt: `Задача #${list.length + 1}: Верно ли, что эта программа выведет слово "YES"?`,
+              code: `x = ${val}\nif x > ${threshold}:\n    print("YES")\nelse:\n    print("NO")`,
+              answer: isBigger ? 'Верно' : 'Неверно'
+            });
+          } else {
+            // Работа со списком
+            const arr = [a, b, a + b, b * 2];
+            const ans = arr[arr.length - 1];
+            list.push({
+              type: 'open',
+              prompt: `Задача #${list.length + 1}: Что выведет обращение по отрицательному индексу?`,
+              code: `data = [${arr.join(', ')}]\nprint(data[-1])`,
+              answer: [String(ans)]
+            });
+          }
+        }
+
+        // --- БЛОК 3: 20 УГЛУБЛЁННЫХ ВОПРОСОВ (МЕТОДЫ СТРОК, СПИСКОВ, СООТВЕТСТВИЯ, ЛОГИКА) ---
+        const advancedPool = [
+          { type: 'match', prompt: 'Сопоставь логический оператор с его описанием:', pairs: [['and', 'Истина, если оба условия верны'], ['or', 'Истина, если верно хотя бы одно'], ['not', 'Меняет True на False и наоборот']] },
+          { type: 'open', prompt: 'Что выведет метод .replace()?', code: 's = "hello world"\nprint(s.replace("world", "python"))', answer: ['hello python', '"hello python"', "'hello python'"] },
+          { type: 'mcq', prompt: 'Какой метод удаляет пробелы в начале и в конце строки?', code: 's = "  код  "', options: ['s.clean()', 's.strip()', 's.trim()', 's.cut()'], answer: 's.strip()' },
+          { type: 'open', prompt: 'Что выведет функция type()?', code: 'print(type(3.14).__name__)', answer: ['float'] },
+          { type: 'tf', prompt: 'Верно ли, что выражение bool("") (пустая строка) возвращает False?', code: null, answer: 'Верно' },
+          { type: 'mcq', prompt: 'Как проверить, есть ли буква "a" в строке word?', code: null, options: ['"a" has word', '"a" in word', 'word.has("a")', '"a" -> word'], answer: '"a" in word' },
+          { type: 'open', prompt: 'Что выведет этот код со срезом строки?', code: 's = "PROGRAM"\nprint(s[:4])', answer: ['PROG', '"PROG"', "'PROG'"] },
+          { type: 'match', prompt: 'Сопоставь функцию преобразования типов и результат:', pairs: [['int(7.9)', '7'], ['str(25)', '"25"'], ['bool(0)', 'False']] },
+          { type: 'open', prompt: 'Чему равно значение выражения?', code: 'print(25 % 7)', answer: ['4'] },
+          { type: 'mcq', prompt: 'Какой результат выдаст код?', code: 'nums = [4, 1, 9, 2]\nprint(min(nums) + max(nums))', options: ['10', '13', '6', '11'], answer: '10' },
+          { type: 'tf', prompt: 'Верно ли, что оператор != означает «не равно»?', code: 'print(5 != 3)  # True', answer: 'Верно' },
+          { type: 'open', prompt: 'Сколько элементов вернёт list(range(2, 10, 2))?', code: 'print(len(list(range(2, 10, 2))))', answer: ['4'] },
+          { type: 'mcq', prompt: 'Какой метод разбивает строку на список слов по пробелам?', code: 'text = "учим язык пайтон"', options: ['text.split()', 'text.join()', 'text.divide()', 'text.slice()'], answer: 'text.split()' },
+          { type: 'open', prompt: 'Что выведет программа?', code: 'x = 10\nx -= 4\nx *= 2\nprint(x)', answer: ['12'] },
+          { type: 'match', prompt: 'Сопоставь выражение Python и его результат:', pairs: [['10 // 3', '3'], ['10 % 3', '1'], ['3 ** 2', '9']] },
+          { type: 'tf', prompt: 'Верно ли, что в одном списке Python могут храниться и числа, и строки одновременно?', code: 'mix = [1, "два", 3.0]', answer: 'Верно' },
+          { type: 'open', prompt: 'Что выведет этот код?', code: 'words = ["A", "B", "C"]\nprint("-".join(words))', answer: ['A-B-C', '"A-B-C"', "'A-B-C'"] },
+          { type: 'mcq', prompt: 'Что вернёт выражение round(4.6)?', code: null, options: ['4', '5', '4.6', '4.0'], answer: '5' },
+          { type: 'open', prompt: 'Что выведет код с циклом while?', code: 'n = 1\nwhile n < 8:\n    n *= 2\nprint(n)', answer: ['8'] },
+          { type: 'mcq', prompt: 'Какое значение по умолчанию возвращает функция без оператора return?', code: null, options: ['0', 'False', 'None', '""'], answer: 'None' }
+        ];
+
+        // Сдвигаем порядок advancedPool в зависимости от темы, чтобы наборы ощущались свежими
+        for (let i = 0; i < 20; i++) {
+          const item = JSON.parse(JSON.stringify(advancedPool[(i + seedOffset * 3) % advancedPool.length]));
+          list.push(item);
+        }
+
+        // Присваиваем каждому вопросу номер фрагмента пазла (1..50)
+        return list.slice(0, 50).map((q, index) => ({
+          ...q,
+          pieceIndex: index // 0..49
+        }));
+      }
+    };
+
+    /**
+     * ОСНОВНОЙ КОНТРОЛЛЕР ПРИЛОЖЕНИЯ
+     */
+    const app = {
+      STORAGE_KEY_SESSION: 'py_puzzle_active_session_v1',
+      STORAGE_KEY_SUBMISSIONS: 'py_puzzle_teacher_submissions_v1',
+
+      puzzles: [],
+      soundEnabled: true,
+      audioCtx: null,
+      timerInterval: null,
+
+      // Текущая активная сессия ученика
+      session: null,
+      // Выбранный вариант в MCQ / TF на текущем вопросе
+      selectedOptionValue: null,
+      // Временное состояние для Match-вопросов
+      currentMatchShuffle: [],
+
+      init() {
+        this.puzzles = QuestionBankBuilder.buildAllPuzzles();
+        this.seedDemoSubmissionIfEmpty();
+        this.renderPuzzleCards();
+        this.checkSavedSession();
+      },
+
+      // Добавим 1 демонстрационную работу в журнал учителя при самом первом запуске
+      seedDemoSubmissionIfEmpty() {
+        const existing = this.getSubmissions();
+        if (existing.length === 0) {
+          const unlockedDemo = Array.from({ length: 44 }, (_, i) => i).filter(i => i !== 13 && i !== 27 && i !== 39 && i !== 48);
+          const demo = [
+            {
+              id: 'demo_1',
+              studentName: 'Айгерим Нурланова (Пример)',
+              studentClass: '7 класс',
+              puzzleId: 'cybercat',
+              puzzleTitle: 'Кибер-Кот в Алматы 2080',
+              unlockedPieces: unlockedDemo,
+              score: unlockedDemo.length,
+              total: 50,
+              elapsedSeconds: 845,
+              finishedAt: new Date(Date.now() - 3600000).toLocaleString('ru-RU'),
+              teacherGrade: '5',
+              teacherComment: 'Отличный результат! Почти весь кибер-кот собран.'
+            }
+          ];
+          localStorage.setItem(this.STORAGE_KEY_SUBMISSIONS, JSON.stringify(demo));
+        }
+      },
+
+      // Звуковые эффекты (Web Audio API — без внешних файлов)
+      playTone(type) {
+        if (!this.soundEnabled) return;
+        try {
+          if (!this.audioCtx) {
+            this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          }
+          const ctx = this.audioCtx;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+
+          const now = ctx.currentTime;
+          if (type === 'success') {
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(523.25, now); // C5
+            osc.frequency.setValueAtTime(659.25, now + 0.08); // E5
+            osc.frequency.setValueAtTime(783.99, now + 0.16); // G5
+            gain.gain.setValueAtTime(0.18, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.42);
+            osc.start(now);
+            osc.stop(now + 0.43);
+          } else if (type === 'error') {
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(190, now);
+            osc.frequency.linearRampToValueAtTime(140, now + 0.22);
+            gain.gain.setValueAtTime(0.12, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+            osc.start(now);
+            osc.stop(now + 0.26);
+          } else if (type === 'win') {
+            osc.type = 'sine';
+            [523.25, 659.25, 783.99, 1046.5].forEach((freq, idx) => {
+              osc.frequency.setValueAtTime(freq, now + idx * 0.11);
+            });
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
+            osc.start(now);
+            osc.stop(now + 0.66);
+          }
+        } catch (e) {
+          // Игнорируем ограничения автовоспроизведения браузера
+        }
+      },
+
+      toggleSound() {
+        this.soundEnabled = !this.soundEnabled;
+        document.getElementById('soundIcon').textContent = this.soundEnabled ? '🔊' : '🔇';
+        document.getElementById('soundLabel').textContent = this.soundEnabled ? 'Звук вкл' : 'Без звука';
+      },
+
+      showToast(message, variant = 'info') {
+        const box = document.getElementById('toastBox');
+        const inner = document.getElementById('toastInner');
+        const styles = {
+          success: 'bg-emerald-950/95 border-emerald-400 text-emerald-200',
+          error: 'bg-rose-950/95 border-rose-400 text-rose-200',
+          warn: 'bg-amber-950/95 border-amber-400 text-amber-200',
+          info: 'bg-slate-900/95 border-cyan-400 text-cyan-200'
+        };
+        inner.className = `px-5 py-3.5 rounded-2xl shadow-2xl border font-semibold text-sm flex items-center gap-2.5 backdrop-blur-md ${styles[variant] || styles.info}`;
+        inner.textContent = message;
+        box.classList.remove('opacity-0', 'translate-y-4');
+        clearTimeout(this._toastTimer);
+        this._toastTimer = setTimeout(() => {
+          box.classList.add('opacity-0', 'translate-y-4');
+        }, 2800);
+      },
+
+      switchScreen(screenId) {
+        ['screenStart', 'screenGame', 'screenResult', 'screenTeacher'].forEach(id => {
+          document.getElementById(id).classList.add('hidden');
+        });
+        document.getElementById(screenId).classList.remove('hidden');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      },
+
+      goHome() {
+        this.stopTimer();
+        this.checkSavedSession();
+        this.switchScreen('screenStart');
+      },
+
+      handleClassSelect(val) {
+        const customInput = document.getElementById('studentClassCustom');
+        if (val === 'custom') {
+          customInput.classList.remove('hidden');
+          customInput.focus();
+        } else {
+          customInput.classList.add('hidden');
+        }
+      },
+
+      getSelectedStudentClass() {
+        const sel = document.getElementById('studentClassSelect').value;
+        if (sel === 'custom') {
+          return document.getElementById('studentClassCustom').value.trim() || 'Без класса';
+        }
+        return sel;
+      },
+
+      renderPuzzleCards() {
+        const grid = document.getElementById('puzzleCardsGrid');
+        grid.innerHTML = '';
+
+        this.puzzles.forEach(p => {
+          const previewUrl = PuzzleArtGenerator.getImageDataUrl(p.id);
+          const card = document.createElement('div');
+          card.className = 'group bg-slate-900/85 border border-indigo-500/30 hover:border-cyan-400 rounded-3xl overflow-hidden shadow-xl transition-all duration-300 hover:-translate-y-1 flex flex-col justify-between';
+          card.innerHTML = `
+            <div>
+              <div class="relative aspect-[2/1] w-full overflow-hidden bg-slate-950">
+                <img src="${previewUrl}" alt="${p.title}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                <span class="absolute top-3 left-3 px-2.5 py-1 rounded-lg bg-slate-950/80 backdrop-blur-md text-[11px] font-bold text-cyan-300 border border-cyan-400/30">
+                  ${p.badge}
+                </span>
+                <span class="absolute bottom-2.5 right-2.5 px-2.5 py-1 rounded-lg bg-slate-950/85 text-xs font-mono font-bold text-amber-300">
+                  50 пазлов
+                </span>
+              </div>
+              <div class="p-5">
+                <h4 class="text-lg font-extrabold text-white group-hover:text-cyan-300 transition mb-1.5">
+                  ${p.title}
+                </h4>
+                <p class="text-xs sm:text-sm text-slate-400 leading-relaxed">
+                  ${p.desc}
+                </p>
+              </div>
+            </div>
+            <div class="px-5 pb-5">
+              <button onclick="app.startNewGame('${p.id}')"
+                class="w-full py-3 px-4 rounded-xl bg-gradient-to-r ${p.accent} hover:opacity-95 text-white font-bold text-sm transition shadow-lg flex items-center justify-center gap-2">
+                <span>Начать сборку</span>
+                <span>🚀</span>
+              </button>
+            </div>
+          `;
+          grid.appendChild(card);
+        });
+      },
+
+      checkSavedSession() {
+        try {
+          const raw = localStorage.getItem(this.STORAGE_KEY_SESSION);
+          const banner = document.getElementById('resumeBanner');
+          if (!raw) {
+            banner.classList.add('hidden');
+            return;
+          }
+          const saved = JSON.parse(raw);
+          if (!saved || !saved.puzzleId || !Array.isArray(saved.unlockedPieces)) {
+            banner.classList.add('hidden');
+            return;
+          }
+          const puzzle = this.puzzles.find(p => p.id === saved.puzzleId);
+          if (!puzzle) return;
+
+          document.getElementById('resumeBannerText').textContent =
+            `${saved.studentName} (${saved.studentClass}) • «${puzzle.title}» • Открыто ${saved.unlockedPieces.length} из 50`;
+          banner.classList.remove('hidden');
+        } catch (e) {
+          console.error(e);
+        }
+      },
+
+      resumeSavedSession() {
+        const raw = localStorage.getItem(this.STORAGE_KEY_SESSION);
+        if (!raw) return;
+        this.session = JSON.parse(raw);
+        this.enterGameScreen();
+      },
+
+      discardSavedSession() {
+        localStorage.removeItem(this.STORAGE_KEY_SESSION);
+        document.getElementById('resumeBanner').classList.add('hidden');
+        this.showToast('Незаконченная игра удалена', 'info');
+      },
+
+      startNewGame(puzzleId) {
+        const nameInput = document.getElementById('studentNameInput');
+        const studentName = nameInput.value.trim();
+        if (!studentName) {
+          nameInput.focus();
+          nameInput.classList.add('border-rose-500');
+          this.showToast('Пожалуйста, введи Фамилию и Имя перед стартом!', 'error');
+          return;
+        }
+        nameInput.classList.remove('border-rose-500');
+        const studentClass = this.getSelectedStudentClass();
+
+        // Очередь индексов вопросов 0..49
+        const queue = Array.from({ length: 50 }, (_, i) => i);
+
+        this.session = {
+          studentName,
+          studentClass,
+          puzzleId,
+          queue,               // Очередь оставшихся кусочков
+          unlockedPieces: [],  // Массив открытых индексов (0..49)
+          skippedPieces: [],   // Отслеживание пропущенных
+          elapsedSeconds: 0,
+          lastUnlockedPiece: null
+        };
+
+        this.saveSessionToStorage();
+        this.enterGameScreen();
+      },
+
+      saveSessionToStorage() {
+        if (this.session) {
+          localStorage.setItem(this.STORAGE_KEY_SESSION, JSON.stringify(this.session));
+        }
+      },
+
+      enterGameScreen() {
+        const puzzle = this.puzzles.find(p => p.id === this.session.puzzleId);
+        if (!puzzle) return;
+
+        document.getElementById('hudStudentName').textContent = this.session.studentName;
+        document.getElementById('hudStudentClass').textContent = this.session.studentClass;
+        document.getElementById('hudPuzzleTitle').textContent = `Картина: «${puzzle.title}»`;
+        document.getElementById('puzzleFullImage').src = PuzzleArtGenerator.getImageDataUrl(puzzle.id);
+
+        this.switchScreen('screenGame');
+        this.startTimer();
+        this.renderPuzzleGrid();
+        this.renderCurrentQuestion();
+        this.updateHudCounters();
+      },
+
+      startTimer() {
+        this.stopTimer();
+        this.updateTimerDisplay();
+        this.timerInterval = setInterval(() => {
+          if (this.session) {
+            this.session.elapsedSeconds += 1;
+            this.updateTimerDisplay();
+            if (this.session.elapsedSeconds % 5 === 0) {
+              this.saveSessionToStorage();
+            }
+          }
+        }, 1000);
+      },
+
+      stopTimer() {
+        if (this.timerInterval) {
+          clearInterval(this.timerInterval);
+          this.timerInterval = null;
+        }
+      },
+
+      formatTime(sec) {
+        const m = Math.floor(sec / 60).toString().padStart(2, '0');
+        const s = (sec % 60).toString().padStart(2, '0');
+        return `${m}:${s}`;
+      },
+
+      updateTimerDisplay() {
+        if (!this.session) return;
+        document.getElementById('hudTimer').textContent = this.formatTime(this.session.elapsedSeconds);
+      },
+
+      updateHudCounters() {
+        const solved = this.session.unlockedPieces.length;
+        const skipped = this.session.skippedPieces.length;
+        document.getElementById('hudSolvedCount').textContent = solved;
+        document.getElementById('hudSkippedCount').textContent = skipped;
+        document.getElementById('hudProgressBar').style.width = `${(solved / 50) * 100}%`;
+        document.getElementById('remainingQueueLabel').textContent = `В очереди: ${this.session.queue.length} вопр.`;
+      },
+
+      // Отрисовка сетки 10x5 (50 фрагментов пазла)
+      renderPuzzleGrid() {
+        const overlay = document.getElementById('puzzleGridOverlay');
+        overlay.innerHTML = '';
+
+        const currentPieceIdx = this.session.queue.length > 0 ? this.session.queue[0] : -1;
+
+        for (let i = 0; i < 50; i++) {
+          const isUnlocked = this.session.unlockedPieces.includes(i);
+          const isCurrent = i === currentPieceIdx;
+          const isJustUnlocked = i === this.session.lastUnlockedPiece;
+
+          const cell = document.createElement('div');
+          if (isUnlocked) {
+            // Прозрачная ячейка — видна часть картинки!
+            cell.className = `border border-emerald-400/25 transition-all duration-300 ${isJustUnlocked ? 'piece-just-unlocked' : ''}`;
+            cell.title = `Фрагмент #${i + 1} открыт!`;
+          } else {
+            // Закрытая ячейка с номером
+            cell.className = `flex items-center justify-center text-[10px] sm:text-xs font-mono font-bold cursor-pointer transition-all select-none border ${
+              isCurrent
+                ? 'bg-indigo-950/90 text-cyan-300 piece-current border-cyan-400'
+                : 'bg-slate-900/95 hover:bg-slate-800/95 text-slate-400 hover:text-white border-slate-700/70'
+            }`;
+            cell.textContent = i + 1;
+            cell.title = `Перейти к вопросу фрагмента #${i + 1}`;
+            cell.onclick = () => this.jumpToPiece(i);
+          }
+          overlay.appendChild(cell);
+        }
+      },
+
+      // Позволяет ученику кликнуть на любой закрытый кусочек пазла и сразу открыть его вопрос
+      jumpToPiece(pieceIndex) {
+        if (this.session.unlockedPieces.includes(pieceIndex)) return;
+        const pos = this.session.queue.indexOf(pieceIndex);
+        if (pos > 0) {
+          this.session.queue.splice(pos, 1);
+          this.session.queue.unshift(pieceIndex);
+          this.saveSessionToStorage();
+          this.renderPuzzleGrid();
+          this.renderCurrentQuestion();
+          this.showToast(`Переход к фрагменту #${pieceIndex + 1}`, 'info');
+        }
+      },
+
+      // Отрисовка текущего вопроса
+      renderCurrentQuestion() {
+        if (this.session.queue.length === 0) {
+          // Все 50 кусочков открыты!
+          this.playTone('win');
+          this.finishAttempt(true);
+          return;
+        }
+
+        const puzzle = this.puzzles.find(p => p.id === this.session.puzzleId);
+        const pieceIdx = this.session.queue[0];
+        const q = puzzle.questions[pieceIdx];
+
+        this.selectedOptionValue = null;
+        const feedbackBox = document.getElementById('qFeedbackBox');
+        feedbackBox.classList.add('hidden');
+
+        document.getElementById('qPieceBadge').textContent = `Фрагмент #${pieceIdx + 1} из 50`;
+        const typeNames = {
+          mcq: 'Тест (1 вариант)',
+          open: 'Открытый ответ',
+          match: 'Соответствие',
+          tf: 'Верно / Неверно'
+        };
+        document.getElementById('qTypeBadge').textContent = typeNames[q.type] || 'Вопрос';
+        document.getElementById('qPromptText').textContent = q.prompt;
+
+        const codeBlock = document.getElementById('qCodeBlock');
+        if (q.code) {
+          codeBlock.textContent = q.code;
+          codeBlock.classList.remove('hidden');
+        } else {
+          codeBlock.classList.add('hidden');
+        }
+
+        const area = document.getElementById('qAnswerArea');
+        area.innerHTML = '';
+
+        if (q.type === 'mcq' || q.type === 'tf') {
+          const opts = q.type === 'tf' ? ['Верно', 'Неверно'] : q.options;
+          opts.forEach((opt, idx) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'mcq-opt-btn w-full text-left px-4 py-3.5 rounded-2xl bg-slate-950/80 hover:bg-slate-800 border border-slate-700 text-slate-100 font-medium text-sm sm:text-base transition flex items-center gap-3';
+            btn.innerHTML = `
+              <span class="w-7 h-7 rounded-lg bg-slate-800 border border-slate-600 flex items-center justify-center font-mono text-xs font-bold text-cyan-300 shrink-0">
+                ${q.type === 'tf' ? (idx === 0 ? '✓' : '✕') : String.fromCharCode(65 + idx)}
+              </span>
+              <span class="font-mono break-all">${this.escapeHtml(opt)}</span>
+            `;
+            btn.onclick = () => {
+              this.selectedOptionValue = opt;
+              document.querySelectorAll('.mcq-opt-btn').forEach(b => {
+                b.classList.remove('border-cyan-400', 'bg-cyan-950/50', 'ring-2', 'ring-cyan-400/30');
+                b.classList.add('border-slate-700', 'bg-slate-950/80');
+              });
+              btn.classList.remove('border-slate-700', 'bg-slate-950/80');
+              btn.classList.add('border-cyan-400', 'bg-cyan-950/50', 'ring-2', 'ring-cyan-400/30');
+            };
+            area.appendChild(btn);
+          });
+        } else if (q.type === 'open') {
+          const wrapper = document.createElement('div');
+          wrapper.innerHTML = `
+            <label class="block text-xs text-slate-400 mb-1.5">
+              Введи ответ (регистр и лишние пробелы не влияют на проверку):
+            </label>
+            <input id="openAnswerInput" type="text" autocomplete="off" spellcheck="false"
+              placeholder="Напиши ответ здесь..."
+              onkeydown="if(event.key==='Enter') app.submitCurrentAnswer()"
+              class="w-full px-4 py-3.5 rounded-2xl bg-slate-950 border-2 border-slate-700 focus:border-cyan-400 outline-none text-white font-mono text-base transition" />
+          `;
+          area.appendChild(wrapper);
+          setTimeout(() => {
+            const inp = document.getElementById('openAnswerInput');
+            if (inp) inp.focus();
+          }, 50);
+        } else if (q.type === 'match') {
+          // Перемешиваем правую колонку для выпадающих списков
+          const rightValues = q.pairs.map(pair => pair[1]);
+          this.currentMatchShuffle = [...rightValues].sort(() => Math.random() - 0.5);
+
+          q.pairs.forEach((pair, idx) => {
+            const row = document.createElement('div');
+            row.className = 'p-3 rounded-2xl bg-slate-950/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2';
+            const optionsHtml = this.currentMatchShuffle
+              .map(val => `<option value="${this.escapeHtml(val)}">${this.escapeHtml(val)}</option>`)
+              .join('');
+
+            row.innerHTML = `
+              <span class="font-mono text-sm font-bold text-cyan-300">${this.escapeHtml(pair[0])}</span>
+              <select id="matchSelect_${idx}"
+                class="sm:w-1/2 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 focus:border-cyan-400 outline-none text-xs sm:text-sm text-white">
+                <option value="">— Выбери соответствие —</option>
+                ${optionsHtml}
+              </select>
+            `;
+            area.appendChild(row);
+          });
+        }
+      },
+
+      /**
+       * УМНАЯ НОРМАЛИЗАЦИЯ ОТВЕТА УЧЕНИКА:
+       * - Убирает пробелы по краям и схлопывает лишние пробелы
+       * - Приводит к нижнему регистру (заглавные/строчные не важны)
+       * - Унифицирует кавычки (' и ")
+       * - Заменяет визуально идентичные кириллические буквы-двойники на латиницу (например, русскую 'с' на латинскую 'c', 'а' на 'a', 'е' на 'e', 'о' на 'o', 'р' на 'p', 'х' на 'x'), если ученик случайно набрал латинскую команду в русской раскладке!
+       */
+      normalizeText(str) {
+        if (typeof str !== 'string') return '';
+        const cyrToLatMap = {
+          'а': 'a', 'с': 'c', 'е': 'e', 'о': 'o', 'р': 'p', 'х': 'x', 'у': 'y', 'к': 'k', 'м': 'm', 'т': 't', 'н': 'h', 'в': 'b'
+        };
+        let s = str.trim().toLowerCase();
+        // Заменяем одинарные кавычки на двойные и убираем лишние пробелы вокруг запятых/скобок
+        s = s.replace(/'/g, '"').replace(/\s+/g, ' ').replace(/\s*,\s*/g, ',');
+        // Если в ответе есть латинские буквы или скобки (код Python), мягко нормализуем случайные кириллические двойники
+        if (/[a-z()[\]_]/.test(s)) {
+          s = s.split('').map(ch => cyrToLatMap[ch] || ch).join('');
+        }
+        return s;
+      },
+
+      submitCurrentAnswer() {
+        if (!this.session || this.session.queue.length === 0) return;
+
+        const puzzle = this.puzzles.find(p => p.id === this.session.puzzleId);
+        const pieceIdx = this.session.queue[0];
+        const q = puzzle.questions[pieceIdx];
+
+        let isCorrect = false;
+
+        if (q.type === 'mcq' || q.type === 'tf') {
+          if (!this.selectedOptionValue) {
+            this.showToast('Сначала выбери один из вариантов ответа!', 'warn');
+            return;
+          }
+          isCorrect = this.selectedOptionValue === q.answer;
+        } else if (q.type === 'open') {
+          const inp = document.getElementById('openAnswerInput');
+          const rawVal = inp ? inp.value : '';
+          if (!rawVal.trim()) {
+            this.showToast('Введи ответ в текстовое поле или нажми «Пропустить»', 'warn');
+            return;
+          }
+          const userNorm = this.normalizeText(rawVal);
+          isCorrect = q.answer.some(validAns => this.normalizeText(validAns) === userNorm);
+        } else if (q.type === 'match') {
+          let allSelected = true;
+          let allMatch = true;
+          q.pairs.forEach((pair, idx) => {
+            const sel = document.getElementById(`matchSelect_${idx}`);
+            const chosen = sel ? sel.value : '';
+            if (!chosen) allSelected = false;
+            if (chosen !== pair[1]) allMatch = false;
+          });
+          if (!allSelected) {
+            this.showToast('Выбери соответствие для каждой строки!', 'warn');
+            return;
+          }
+          isCorrect = allMatch;
+        }
+
+        const feedbackBox = document.getElementById('qFeedbackBox');
+
+        if (isCorrect) {
+          this.playTone('success');
+          // Убираем из очереди, добавляем в открытые
+          this.session.queue.shift();
+          if (!this.session.unlockedPieces.includes(pieceIdx)) {
+            this.session.unlockedPieces.push(pieceIdx);
+          }
+          this.session.skippedPieces = this.session.skippedPieces.filter(idx => idx !== pieceIdx);
+          this.session.lastUnlockedPiece = pieceIdx;
+
+          this.saveSessionToStorage();
+          this.updateHudCounters();
+          this.renderPuzzleGrid();
+          this.showToast(`Верно! Открыт фрагмент #${pieceIdx + 1} 🎉`, 'success');
+          this.renderCurrentQuestion();
+        } else {
+          this.playTone('error');
+          feedbackBox.className = 'mt-4 p-3.5 rounded-2xl text-sm font-medium border bg-rose-950/70 border-rose-500/40 text-rose-200';
+          feedbackBox.innerHTML = '❌ Пока неверно! Попробуй ещё раз или нажми <strong>«Пропустить»</strong>, чтобы вернуться к этому вопросу позже.';
+          feedbackBox.classList.remove('hidden');
+        }
+      },
+
+      skipCurrentQuestion() {
+        if (!this.session || this.session.queue.length === 0) return;
+
+        const pieceIdx = this.session.queue.shift();
+        this.session.queue.push(pieceIdx);
+        if (!this.session.skippedPieces.includes(pieceIdx)) {
+          this.session.skippedPieces.push(pieceIdx);
+        }
+
+        this.saveSessionToStorage();
+        this.updateHudCounters();
+        this.renderPuzzleGrid();
+        this.renderCurrentQuestion();
+        this.showToast(`Фрагмент #${pieceIdx + 1} отложен в конец очереди ⏭️`, 'warn');
+      },
+
+      openFinishConfirmModal() {
+        const solved = this.session.unlockedPieces.length;
+        const left = 50 - solved;
+        const textEl = document.getElementById('finishConfirmText');
+        if (left === 0) {
+          textEl.textContent = 'Поздравляем! Ты открыл все 50 фрагментов пазла. Готов отправить результат учителю?';
+        } else {
+          textEl.innerHTML = `Сейчас у тебя открыто <strong class="text-emerald-400">${solved} из 50</strong> фрагментов (осталось ${left}). Если завершишь сейчас, учитель увидит пазл собранным на ${Math.round((solved / 50) * 100)}%.`;
+        }
+        document.getElementById('finishConfirmModal').classList.remove('hidden');
+      },
+
+      closeModal(id) {
+        document.getElementById(id).classList.add('hidden');
+      },
+
+      finishAttempt(autoCompleted = false) {
+        this.closeModal('finishConfirmModal');
+        this.stopTimer();
+
+        const puzzle = this.puzzles.find(p => p.id === this.session.puzzleId);
+        const score = this.session.unlockedPieces.length;
+        const percent = Math.round((score / 50) * 100);
+
+        const submission = {
+          id: 'sub_' + Date.now(),
+          studentName: this.session.studentName,
+          studentClass: this.session.studentClass,
+          puzzleId: puzzle.id,
+          puzzleTitle: puzzle.title,
+          unlockedPieces: [...this.session.unlockedPieces],
+          score,
+          total: 50,
+          elapsedSeconds: this.session.elapsedSeconds,
+          finishedAt: new Date().toLocaleString('ru-RU'),
+          teacherGrade: '',
+          teacherComment: ''
+        };
+
+        const all = this.getSubmissions();
+        all.unshift(submission);
+        localStorage.setItem(this.STORAGE_KEY_SUBMISSIONS, JSON.stringify(all));
+        localStorage.removeItem(this.STORAGE_KEY_SESSION);
+
+        // Заполняем экран результата
+        document.getElementById('resultHeading').textContent =
+          autoCompleted ? 'Поздравляем! Весь пазл собран!' : 'Сборка завершена и отправлена!';
+        document.getElementById('resultSubheading').textContent =
+          `${submission.studentName} (${submission.studentClass}) • Картина: «${puzzle.title}»`;
+        document.getElementById('resScore').textContent = `${score}/50`;
+        document.getElementById('resPercent').textContent = `${percent}%`;
+        document.getElementById('resTime').textContent = this.formatTime(submission.elapsedSeconds);
+
+        this.renderStaticPuzzlePreview(
+          document.getElementById('resultPuzzleContainer'),
+          puzzle.id,
+          submission.unlockedPieces,
+          true
+        );
+
+        this.switchScreen('screenResult');
+      },
+
+      // Отрисовка собранного (или частично собранного) пазла для экрана результатов и кабинета учителя
+      renderStaticPuzzlePreview(container, puzzleId, unlockedPieces, showNumbers = false) {
+        const imgUrl = PuzzleArtGenerator.getImageDataUrl(puzzleId);
+        let cellsHtml = '';
+        for (let i = 0; i < 50; i++) {
+          const open = unlockedPieces.includes(i);
+          if (open) {
+            cellsHtml += `<div class="border border-emerald-400/20"></div>`;
+          } else {
+            cellsHtml += `<div class="bg-slate-950/92 border border-slate-800/80 flex items-center justify-center text-[9px] font-mono text-slate-600">${showNumbers ? i + 1 : ''}</div>`;
+          }
+        }
+        container.innerHTML = `
+          <img src="${imgUrl}" alt="Пазл ученика" class="w-full h-full object-cover block" />
+          <div class="absolute inset-0 grid grid-cols-10 grid-rows-5">
+            ${cellsHtml}
+          </div>
+        `;
+      },
+
+      // ==================== ЛОГИКА ПАНЕЛИ УЧИТЕЛЯ ====================
+      openTeacherLogin() {
+        document.getElementById('teacherLoginModal').classList.remove('hidden');
+      },
+
+      fillDemoTeacherCreds() {
+        document.getElementById('teacherLoginUser').value = 'shopizhuma';
+        document.getElementById('teacherLoginPass').value = '2288';
+      },
+
+      verifyTeacherLogin() {
+        const user = document.getElementById('teacherLoginUser').value.trim();
+        const pass = document.getElementById('teacherLoginPass').value.trim();
+
+        if (user === 'shopizhuma' && pass === '2288') {
+          this.closeModal('teacherLoginModal');
+          this.stopTimer();
+          this.renderTeacherTable();
+          this.switchScreen('screenTeacher');
+          this.showToast('Добро пожаловать в кабинет учителя!', 'success');
+        } else {
+          this.playTone('error');
+          this.showToast('Неверный логин или пароль учителя!', 'error');
+        }
+      },
+
+      getSubmissions() {
+        try {
+          return JSON.parse(localStorage.getItem(this.STORAGE_KEY_SUBMISSIONS)) || [];
+        } catch (e) {
+          return [];
+        }
+      },
+
+      renderTeacherTable() {
+        const listEl = document.getElementById('teacherSubmissionsList');
+        const search = (document.getElementById('teacherSearchInput').value || '').toLowerCase();
+        const puzzleFilter = document.getElementById('teacherPuzzleFilter').value;
+
+        const all = this.getSubmissions();
+        const filtered = all.filter(item => {
+          const matchesText =
+            item.studentName.toLowerCase().includes(search) ||
+            item.studentClass.toLowerCase().includes(search);
+          const matchesPuzzle = puzzleFilter === 'all' || item.puzzleId === puzzleFilter;
+          return matchesText && matchesPuzzle;
+        });
+
+        document.getElementById('teacherTotalCount').textContent = filtered.length;
+        listEl.innerHTML = '';
+
+        if (filtered.length === 0) {
+          listEl.innerHTML = `
+            <div class="col-span-full bg-slate-900/70 border border-slate-800 rounded-3xl p-10 text-center text-slate-400">
+              Пока нет работ по выбранному фильтру.
+            </div>
+          `;
+          return;
+        }
+
+        filtered.forEach(sub => {
+          const percent = Math.round((sub.score / sub.total) * 100);
+          const card = document.createElement('div');
+          card.className = 'bg-slate-900/90 border border-indigo-500/30 rounded-3xl p-5 shadow-xl flex flex-col justify-between gap-4';
+
+          card.innerHTML = `
+            <div>
+              <div class="flex items-start justify-between gap-3 mb-3">
+                <div>
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <h4 class="text-lg font-extrabold text-white">${this.escapeHtml(sub.studentName)}</h4>
+                    <span class="px-2.5 py-0.5 rounded-lg bg-indigo-500/20 text-indigo-300 text-xs font-bold">
+                      ${this.escapeHtml(sub.studentClass)}
+                    </span>
+                  </div>
+                  <p class="text-xs text-cyan-300 font-medium mt-0.5">
+                    «${this.escapeHtml(sub.puzzleTitle)}» • ${sub.finishedAt}
+                  </p>
+                </div>
+                <div class="text-right shrink-0">
+                  <div class="text-xl font-extrabold font-mono text-emerald-400">${sub.score}/50</div>
+                  <div class="text-xs text-slate-400 font-mono">${percent}% • ${this.formatTime(sub.elapsedSeconds || 0)}</div>
+                </div>
+              </div>
+
+              <!-- Миниатюра собранного учеником пазла -->
+              <div id="miniPuzzle_${sub.id}" onclick="app.inspectSubmission('${sub.id}')" title="Нажмите, чтобы увеличить пазл"
+                class="relative w-full aspect-[2/1] rounded-2xl overflow-hidden border border-slate-700 hover:border-cyan-400 cursor-pointer transition bg-slate-950">
+              </div>
+            </div>
+
+            <!-- Блок оценивания учителем -->
+            <div class="pt-3 border-t border-slate-800 space-y-2.5">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <label class="text-xs font-bold uppercase text-slate-400">Оценка учителя:</label>
+                <div class="flex items-center gap-1.5">
+                  ${['5', '4', '3', '2'].map(g => `
+                    <button type="button" onclick="app.setTeacherGrade('${sub.id}', '${g}')"
+                      class="w-9 h-9 rounded-xl font-extrabold text-sm transition border ${
+                        sub.teacherGrade === g
+                          ? 'bg-emerald-500 border-emerald-300 text-slate-950 shadow-lg'
+                          : 'bg-slate-950 border-slate-700 text-slate-300 hover:border-cyan-400'
+                      }">
+                      ${g}
+                    </button>
+                  `).join('')}
+                </div>
+              </div>
+
+              <div class="flex gap-2">
+                <input id="commentInput_${sub.id}" type="text" value="${this.escapeHtml(sub.teacherComment || '')}"
+                  placeholder="Комментарий ученику (необязательно)..."
+                  class="flex-1 px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700 focus:border-cyan-400 outline-none text-xs text-white" />
+                <button onclick="app.saveTeacherComment('${sub.id}')"
+                  class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition">
+                  Сохранить
+                </button>
+              </div>
+            </div>
+          `;
+
+          listEl.appendChild(card);
+          const miniBox = document.getElementById(`miniPuzzle_${sub.id}`);
+          this.renderStaticPuzzlePreview(miniBox, sub.puzzleId, sub.unlockedPieces, false);
+        });
+      },
+
+      setTeacherGrade(subId, grade) {
+        const all = this.getSubmissions();
+        const item = all.find(s => s.id === subId);
+        if (!item) return;
+        item.teacherGrade = grade;
+        localStorage.setItem(this.STORAGE_KEY_SUBMISSIONS, JSON.stringify(all));
+        this.renderTeacherTable();
+        this.showToast(`Оценка «${grade}» сохранена для ${item.studentName}`, 'success');
+      },
+
+      saveTeacherComment(subId) {
+        const all = this.getSubmissions();
+        const item = all.find(s => s.id === subId);
+        if (!item) return;
+        const inp = document.getElementById(`commentInput_${subId}`);
+        item.teacherComment = inp ? inp.value.trim() : '';
+        localStorage.setItem(this.STORAGE_KEY_SUBMISSIONS, JSON.stringify(all));
+        this.showToast('Комментарий учителя сохранён!', 'success');
+      },
+
+      inspectSubmission(subId) {
+        const sub = this.getSubmissions().find(s => s.id === subId);
+        if (!sub) return;
+        document.getElementById('inspectStudentTitle').textContent = `${sub.studentName} (${sub.studentClass})`;
+        document.getElementById('inspectPuzzleSubtitle').textContent = `Пазл: «${sub.puzzleTitle}» • Сдано: ${sub.finishedAt}`;
+        this.renderStaticPuzzlePreview(
+          document.getElementById('inspectPuzzleVisual'),
+          sub.puzzleId,
+          sub.unlockedPieces,
+          true
+        );
+        document.getElementById('inspectStatsRow').innerHTML = `
+          <span>Открыто фрагментов: <strong class="text-emerald-400">${sub.score} / 50</strong> (${Math.round((sub.score / 50) * 100)}%)</span>
+          <span>Затрачено времени: <strong class="text-cyan-300">${this.formatTime(sub.elapsedSeconds || 0)}</strong></span>
+          <span>Оценка: <strong class="text-amber-300">${sub.teacherGrade || 'Не выставлена'}</strong></span>
+        `;
+        document.getElementById('teacherInspectModal').classList.remove('hidden');
+      },
+
+      exportTeacherCSV() {
+        const all = this.getSubmissions();
+        if (all.length === 0) {
+          this.showToast('Нет данных для экспорта', 'warn');
+          return;
+        }
+        const headers = ['ФИО ученика', 'Класс', 'Пазл', 'Открыто фрагментов', 'Всего', 'Процент', 'Время (сек)', 'Оценка', 'Комментарий', 'Дата'];
+        const rows = all.map(s => [
+          `"${(s.studentName || '').replace(/"/g, '""')}"`,
+          `"${(s.studentClass || '').replace(/"/g, '""')}"`,
+          `"${(s.puzzleTitle || '').replace(/"/g, '""')}"`,
+          s.score,
+          s.total,
+          `${Math.round((s.score / s.total) * 100)}%`,
+          s.elapsedSeconds || 0,
+          `"${s.teacherGrade || ''}"`,
+          `"${(s.teacherComment || '').replace(/"/g, '""')}"`,
+          `"${s.finishedAt || ''}"`
+        ]);
+
+        const csvContent = '\uFEFF' + [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `python_puzzle_results_${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        this.showToast('Ведомость CSV успешно скачана!', 'success');
+      },
+
+      escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+    };
+
+    window.addEventListener('DOMContentLoaded', () => {
+      app.init();
+    });
+  </script>
+</body>
+</html>
